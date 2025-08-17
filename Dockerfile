@@ -8,8 +8,18 @@ RUN npm ci --ignore-scripts
 # ---------- build ----------
 FROM node:20-slim AS build
 WORKDIR /app
+# deps já instaladas
 COPY --from=deps /app/node_modules ./node_modules
+# copia todo o projeto (inclui prisma/)
 COPY . .
+
+# prisma generate ANTES do tsc (precisa do schema para gerar tipos)
+RUN apt-get update -y \
+  && apt-get install -y --no-install-recommends openssl ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+RUN npx prisma generate
+
+# agora pode compilar Typescript
 RUN npm run build
 
 # ---------- run (prod) ----------
@@ -17,16 +27,16 @@ FROM node:20-slim AS run
 WORKDIR /app
 ENV NODE_ENV=production
 
-# libs necessárias p/ Prisma e TLS
+# libs necessárias p/ Prisma e TLS no runtime
 RUN apt-get update -y \
   && apt-get install -y --no-install-recommends openssl ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
-# instala deps sem scripts; geraremos o Prisma client depois
+# instala deps no runtime sem scripts; vamos gerar depois
 COPY package*.json ./
 RUN npm ci --ignore-scripts
 
-# agora sim: copia schema/migrations e gera o client
+# copia schema/migrations e gera o client no runtime
 COPY prisma ./prisma
 RUN npx prisma generate
 
